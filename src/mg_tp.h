@@ -128,6 +128,12 @@
 #define mg_get_num_os_threads() omp_get_num_threads()
 #define mg_get_os_thread_num()  omp_get_thread_num()
 
+#elif defined _MG_ARGOBOTS
+
+#  include "abt.h"
+int mg_get_num_os_threads ();
+int mg_get_os_thread_num ();
+
 #else // For non-threaded versions, e.g. serial, MPI-only.
 
 #  define mg_get_os_thread_num() 0

@@ -718,6 +718,18 @@ int MG_Report_performance ( InputParams params )
    fprintf ( stdout, " %d qthreads shepherds \n", (int)num_qtsheps );
    fprintf ( stdout, " %d qthreads workers   \n", (int)num_qtworkers );
    fprintf ( stdout, " qthreads  stack size %d \n", (int)qtstack_size );
+#elif defined _MG_MPI && _MG_ARGOBOTS
+   fprintf ( stdout, " Mantevo miniGhost, task parallel (MPI+Argobots) version \n" );
+   int num_xstreams; ABT_xstream_get_num( &num_xstreams );
+   fprintf ( stdout, "\n" );
+   if ( numpes == 1 ) {
+      fprintf ( stdout, " %d MPI process \n", numpes );
+   }
+   else {
+      fprintf ( stdout, " %d MPI processes \n", numpes );
+   }
+   fprintf ( stdout, " %d Argobots execution streams \n", (int)num_xstreams );
+   fprintf ( stdout, " Argobots  stack size ?? \n" );
 #elif defined _MG_MPI
    fprintf ( stdout, " Mantevo miniGhost, task parallel (MPI) version. \n" );
    fprintf ( stdout, "\n" );

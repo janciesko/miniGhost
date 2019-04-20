@@ -60,6 +60,14 @@ aligned_t compute_block(void * args_)
 
    return ierr;
 }
+
+#elif defined _MG_ARGOBOTS
+
+void tp_abt_init ( int num_vars, int num_blks );
+void tp_abt_finalize ();
+void tp_abt_kernel ( StateVar **g, BlockInfo **blk, InputParams *params,
+                     int irange, int jrange );
+
 #endif
 
 int main ( int argc, char* argv[] )
@@ -102,6 +110,8 @@ int main ( int argc, char* argv[] )
 
 #if defined (_MG_QT) && !defined (_MG_MPIQ)
             qthread_initialize();
+#elif defined (_MG_ARGOBOTS)
+            ABT_init(0, 0);
 #endif
 
    ierr = MG_Init ( argc, argv, &params );
@@ -124,6 +134,10 @@ int main ( int argc, char* argv[] )
 
    blk = (BlockInfo**)MG_CALLOC ( params.numblks, sizeof(BlockInfo*) );
    MG_Assert ( !ierr, "main: Allocation of **blk" );
+
+#if defined (_MG_ARGOBOTS)
+   tp_abt_init ( params.numvars, params.numblks );
+#endif
 
    ierr = MG_Block_init ( &params, blk );
    MG_Assert ( !ierr, "main: MG_Block_init" );
@@ -208,6 +222,7 @@ int main ( int argc, char* argv[] )
             qt_sinc_init(&sinc, 0, NULL, NULL, params.numvars * params.numblks);
 #endif
 
+#if !defined _MG_ARGOBOTS
          for ( ivar=0; ivar<params.numvars; ivar++ ) {   // Loop over variables.
 
             for ( ithread=0; ithread<numthreads; ithread++ ) {
@@ -261,6 +276,17 @@ int main ( int argc, char* argv[] )
          qt_sinc_fini ( &sinc );
 #endif
 
+#else // _MG_ARGOBOTS
+
+         for ( ivar=0; ivar<params.numvars; ivar++ ) {
+            for ( ithread=0; ithread<numthreads; ithread++ ) {
+               g[ivar]->thr_flux[ithread] = 0.0;
+            }
+         }
+         tp_abt_kernel ( g, blk, &params, params.numvars, params.numblks );
+
+#endif
+
          /* Toggle variable domains _after_ synchronizing all tasks in
           * this time step. */
          for ( ivar=0; ivar<params.numvars; ivar++ ) {   // Loop over variables.
@@ -291,7 +317,11 @@ int main ( int argc, char* argv[] )
       } // End tsteps
 
    } // End spike insertion.
-      
+
+#if defined _MG_ARGOBOTS
+   tp_abt_finalize ();
+#endif
+
 #if defined _USE_PAT_API
    ierr = PAT_region_end ( 1 );
    MG_Assert ( !ierr, "main: PAT_region_end" );
@@ -334,3 +364,456 @@ int main ( int argc, char* argv[] )
 
 // End main.c
 }
+
+#if defined _MG_ARGOBOTS
+
+// POWER uses 128 while the others 64
+#ifdef __powerpc__
+#  define MG_TP_ABT_CACHELINE_SIZE 128
+#else
+#  define MG_TP_ABT_CACHELINE_SIZE 64
+#endif
+
+typedef struct {
+   ABT_thread    handle;
+   int           ifrom, ito, jfrom, jto;
+   StateVar   ** g;
+   BlockInfo  ** blk;
+   InputParams * params;
+   char padding[MG_TP_ABT_CACHELINE_SIZE-sizeof(void *)*4-sizeof(int)*4];
+} tp_abt_thread_data_t;
+
+struct {
+   char padding1[MG_TP_ABT_CACHELINE_SIZE];
+   int num_xstreams;
+   int num_threads;
+   int num_vars, num_blks;
+   int split_a, split_b;
+   ABT_xstream *xstreams;
+   ABT_sched *scheds;
+   ABT_pool *priv_pools;
+   ABT_pool *shared_pools;
+   tp_abt_thread_data_t *thread_data;
+   char padding2[MG_TP_ABT_CACHELINE_SIZE];
+} g_abt_global_data;
+
+static int tp_abt_sched_init ( ABT_sched sched, ABT_sched_config config );
+static void tp_abt_sched_run ( ABT_sched sched );
+static int tp_abt_sched_free ( ABT_sched sched );
+
+static inline void *tp_abt_malign ( size_t size ) {
+    void *p_ptr;
+    int ret = posix_memalign ( &p_ptr, MG_TP_ABT_CACHELINE_SIZE, size );
+    assert ( ret == 0 );
+    return p_ptr;
+}
+
+static inline void tp_abt_size_check () {
+   // size check
+   int vals[1 - (sizeof(tp_abt_thread_data_t) % MG_TP_ABT_CACHELINE_SIZE == 0
+                 ? 0 : 2)];
+   (void) vals;
+}
+
+void tp_abt_init ( int num_vars, int num_blks ) {
+   int i, j, rank;
+   char *env = getenv ( "ABT_NUM_XSTREAMS" );
+   int num_xstreams = 0;
+   if ( env ) {
+      num_xstreams = atoi ( env );
+   } else {
+      num_xstreams = sysconf ( _SC_NPROCESSORS_ONLN );
+   }
+   printf("num_vars %d num_blks = %d\n", num_vars, num_blks);
+   g_abt_global_data.num_xstreams = num_xstreams;
+   g_abt_global_data.num_vars = num_vars;
+   g_abt_global_data.num_blks = num_blks;
+
+   // Create thread pools
+   g_abt_global_data.priv_pools = (ABT_pool *)
+      tp_abt_malign ( sizeof(ABT_pool) * num_xstreams );
+   g_abt_global_data.shared_pools = (ABT_pool *)
+      tp_abt_malign ( sizeof(ABT_pool) * num_xstreams );
+   for ( i = 0; i < num_xstreams; i++) {
+      ABT_pool_create_basic ( ABT_POOL_FIFO, ABT_POOL_ACCESS_MPMC, ABT_TRUE,
+                              &g_abt_global_data.priv_pools[i] );
+   }
+   for ( i = 0; i < num_xstreams; i++) {
+      ABT_pool_create_basic ( ABT_POOL_FIFO, ABT_POOL_ACCESS_MPMC, ABT_TRUE,
+                              &g_abt_global_data.shared_pools[i] );
+   }
+
+   // Create schedulers
+   g_abt_global_data.scheds = (ABT_sched *)
+      tp_abt_malign ( sizeof(ABT_sched) * num_xstreams );
+   {
+      ABT_sched_def sched_def;
+      sched_def.type = ABT_SCHED_TYPE_ULT;
+      sched_def.init = tp_abt_sched_init;
+      sched_def.run = tp_abt_sched_run;
+      sched_def.free = tp_abt_sched_free;
+      sched_def.get_migr_pool = NULL;
+
+      ABT_sched_config_var cv_freq = {
+         .idx = 0,
+         .type = ABT_SCHED_CONFIG_INT
+      };
+      ABT_sched_config config;
+      ABT_sched_config_create ( &config, cv_freq, 10000,
+                                ABT_sched_config_var_end );
+
+      ABT_pool *my_pools = (ABT_pool *)
+         malloc ( sizeof(ABT_pool) * (num_xstreams + 1) );
+      for ( rank = 0; rank < num_xstreams; rank++ ) {
+         my_pools[0] = g_abt_global_data.priv_pools[rank];
+         for ( i = 0; i < num_xstreams; i++ ) {
+            my_pools[i + 1]
+               = g_abt_global_data.shared_pools[(rank + i) % num_xstreams];
+         }
+         ABT_sched_create ( &sched_def, num_xstreams + 1, my_pools, config,
+                            &g_abt_global_data.scheds[rank] );
+      }
+      free ( my_pools );
+      ABT_sched_config_free ( &config );
+   }
+
+   // Create execution streams (=workers) and thread pools
+   g_abt_global_data.xstreams = (ABT_xstream *)
+      tp_abt_malign ( sizeof(ABT_xstream) * num_xstreams );
+   for ( rank = 0; rank < num_xstreams; rank++ ) {
+      ABT_xstream xstream;
+      if ( rank == 0 ) {
+         ABT_xstream_self ( &g_abt_global_data.xstreams[rank] );
+         ABT_xstream_set_main_sched ( g_abt_global_data.xstreams[rank],
+                                      g_abt_global_data.scheds[rank] );
+      } else {
+         ABT_xstream_create ( g_abt_global_data.scheds[rank],
+                              &g_abt_global_data.xstreams[rank] );
+      }
+   }
+
+   // Create threads.
+   g_abt_global_data.thread_data = (tp_abt_thread_data_t *)
+      tp_abt_malign ( sizeof(tp_abt_thread_data_t) * num_vars * num_blks );
+   for ( i = 0; i < num_vars * num_blks; i++ ) {
+      g_abt_global_data.thread_data[i].handle = ABT_THREAD_NULL;
+   }
+
+   // Find good values to decompose the range.
+   for ( i = 1; i < num_xstreams + 1; i++ ) {
+      int ii = i * i;
+      if ( ( ii - ( i << 1 ) + 1 ) < num_xstreams && ii >= num_xstreams )
+         break;
+   }
+
+   for ( j = (i > num_vars ? num_vars : i); j >= 0; j-- ) {
+      if ( num_xstreams % j == 0 ) {
+         if (j > num_blks) {
+           g_abt_global_data.split_a = num_xstreams / num_blks;
+           g_abt_global_data.split_b = num_blks;
+         } else {
+           g_abt_global_data.split_a = num_xstreams / j;
+           g_abt_global_data.split_b = j;
+         }
+         break;
+      }
+   }
+   g_abt_global_data.num_threads = num_vars * num_blks;
+
+   // Adjust the number of threads.
+   mgpp.num_threads = mg_get_num_os_threads();
+}
+
+void tp_abt_finalize () {
+   int i;
+   // Free threads.
+   for ( i = 0; i < g_abt_global_data.num_threads;
+         i++ ) {
+      if ( g_abt_global_data.thread_data[i].handle != ABT_THREAD_NULL ) {
+         ABT_thread_free ( &g_abt_global_data.thread_data[i].handle );
+      }
+   }
+   // Free secondary execution streams
+   for ( i = 1; i < g_abt_global_data.num_xstreams; i++ ) {
+      ABT_xstream_join ( g_abt_global_data.xstreams[i] );
+      ABT_xstream_free ( &g_abt_global_data.xstreams[i] );
+   }
+   // Free schedulers of secondary execution streams
+   for ( i = 1; i < g_abt_global_data.num_xstreams; i++ ) {
+      ABT_sched_free ( &g_abt_global_data.scheds[i] );
+   }
+   free ( g_abt_global_data.thread_data );
+   free ( g_abt_global_data.scheds );
+   free ( g_abt_global_data.priv_pools );
+   free ( g_abt_global_data.shared_pools );
+   free ( g_abt_global_data.xstreams );
+}
+
+void tp_abt_create_thread ( int ifrom, int ito, int jfrom, int jto, int depth,
+                            int index, StateVar **g, BlockInfo **blk,
+                            InputParams *params );
+void tp_abt_join_thread ( int ifrom, int jfrom );
+
+int mg_get_num_os_threads () {
+  if ( g_abt_global_data.num_xstreams == 0 ) {
+    char *env = getenv ( "ABT_NUM_XSTREAMS" );
+    int num_xstreams = 0;
+    if ( env ) {
+       num_xstreams = atoi ( env );
+    } else {
+       num_xstreams = sysconf ( _SC_NPROCESSORS_ONLN );
+    }
+    g_abt_global_data.num_xstreams = num_xstreams;
+    return num_xstreams;
+  } else {
+    return g_abt_global_data.num_xstreams;
+  }
+}
+
+int mg_get_os_thread_num () {
+   int rank = 0;
+   ABT_xstream_self_rank(&rank);
+   return rank;
+}
+
+void compute_block ( void * args_ )
+{
+   tp_abt_thread_data_t * args = (tp_abt_thread_data_t *)args_;
+   int ii, jj;
+
+   const int ifrom = args->ifrom;
+   const int ito = args->ito;
+   const int jfrom = args->jfrom;
+   const int jto = args->jto;
+
+   StateVar **g = args->g;
+   BlockInfo **blk = args->blk;
+   InputParams *params = args->params;
+
+   int irange = ito - ifrom;
+   int jrange = jto - jfrom;
+   if ( irange == 0 || jrange == 0 )
+      return;
+
+   if ( irange == 1 ) {
+      if ( jrange == 1 ) {
+         // Leaf node.
+         MG_Stencil ( *params, g, *blk[jfrom], ifrom );
+      } else {
+         // Iterate over J (2-way)
+         const int jfrom1 = jfrom;
+         const int jto1 = jfrom + (jrange >> 1);
+         const int jfrom2 = jto1;
+         const int jto2 = jto;
+         tp_abt_create_thread ( ifrom, ito, jfrom2, jto2,
+                                1, 0, g, blk, params );
+         tp_abt_create_thread ( ifrom, ito, jfrom1, jto1,
+                                1, -1, g, blk, params );
+         tp_abt_join_thread ( ifrom, jfrom2 );
+      }
+   } else {
+      if ( jrange == 1 ) {
+         // Iterate over I (2-way)
+         const int ifrom1 = ifrom;
+         const int ito1 = ifrom + (irange >> 1);
+         const int ifrom2 = ito1;
+         const int ito2 = ito;
+         tp_abt_create_thread ( ifrom2, ito2, jfrom, jto,
+                                1, 0, g, blk, params );
+         tp_abt_create_thread ( ifrom1, ito1, jfrom, jto,
+                                1, -1, g, blk, params );
+         tp_abt_join_thread ( ifrom2, jfrom );
+      } else {
+         // Iterate over I and J (2,2-way)
+         const int ifrom1 = ifrom;
+         const int ito1 = ifrom + (irange >> 1);
+         const int ifrom2 = ito1;
+         const int ito2 = ito;
+         const int jfrom1 = jfrom;
+         const int jto1 = jfrom + (jrange >> 1);
+         const int jfrom2 = jto1;
+         const int jto2 = jto;
+         tp_abt_create_thread ( ifrom2, ito2, jfrom2, jto2,
+                                1, 0, g, blk, params );
+         tp_abt_create_thread ( ifrom1, ito1, jfrom2, jto2,
+                                1, 0, g, blk, params );
+         tp_abt_create_thread ( ifrom2, ito2, jfrom1, jto1,
+                                1, 0, g, blk, params );
+         tp_abt_create_thread ( ifrom1, ito1, jfrom1, jto1,
+                                1, -1, g, blk, params );
+
+         tp_abt_join_thread ( ifrom2, jfrom2 );
+         tp_abt_join_thread ( ifrom2, jfrom1 );
+         tp_abt_join_thread ( ifrom1, jfrom2 );
+      }
+   }
+}
+
+void tp_abt_create_thread ( int ifrom, int ito, int jfrom, int jto, int depth,
+                            int index, StateVar **g, BlockInfo **blk,
+                            InputParams *params ) {
+   ABT_pool target_pool = ABT_POOL_NULL;
+   if ( depth == 0 ) {
+      // Assign to the private pool.
+      target_pool = g_abt_global_data.priv_pools[index];
+   } else if ( index >= 0 ) {
+      // Assign to the local shared pool.
+      int rank;
+      ABT_xstream_self_rank ( &rank );
+      target_pool = g_abt_global_data.shared_pools[rank];
+   }
+   int data_idx = ifrom * g_abt_global_data.num_blks + jfrom;
+
+   // Set arguments.
+   g_abt_global_data.thread_data[data_idx].ifrom = ifrom;
+   g_abt_global_data.thread_data[data_idx].ito = ito;
+   g_abt_global_data.thread_data[data_idx].jfrom = jfrom;
+   g_abt_global_data.thread_data[data_idx].jto = jto;
+   g_abt_global_data.thread_data[data_idx].g = g;
+   g_abt_global_data.thread_data[data_idx].blk = blk;
+   g_abt_global_data.thread_data[data_idx].params = params;
+
+   // Create threads.
+   if ( target_pool != ABT_POOL_NULL ) {
+      if ( g_abt_global_data.thread_data[data_idx].handle != ABT_THREAD_NULL ) {
+         ABT_thread_revive ( target_pool, compute_block,
+                             &g_abt_global_data.thread_data[data_idx],
+                             &g_abt_global_data.thread_data[data_idx].handle);
+      } else {
+         ABT_thread_create ( target_pool, compute_block,
+                             &g_abt_global_data.thread_data[data_idx],
+                             ABT_THREAD_ATTR_NULL,
+                             &g_abt_global_data.thread_data[data_idx].handle);
+      }
+   } else {
+      // Serialize it.
+      compute_block ( &g_abt_global_data.thread_data[data_idx] );
+   }
+}
+
+void tp_abt_join_thread ( int ifrom, int jfrom ) {
+   int data_idx = ifrom * g_abt_global_data.num_blks + jfrom;
+   ABT_thread_join ( g_abt_global_data.thread_data[data_idx].handle );
+}
+
+void tp_abt_kernel ( StateVar **g, BlockInfo **blk, InputParams *params,
+                     int irange, int jrange ) {
+   int ii, jj;
+   const int split_a = g_abt_global_data.split_a;
+   const int split_b = g_abt_global_data.split_b;
+
+   int prev_ito = 0;
+   for ( ii = 0; ii < split_a; ii++ ) {
+      int ifrom = prev_ito;
+      int ito = (irange * (ii + 1)) / split_a;
+      int prev_jto = 0;
+      for ( jj = 0; jj < split_b; jj++ ) {
+         int jfrom = prev_jto;
+         int jto = (jrange * (jj + 1)) / split_b;
+         prev_jto = jto;
+         if (ito - ifrom > 0 && jto - jfrom > 0) {
+            tp_abt_create_thread ( ifrom, ito, jfrom, jto, 0, (ii + jj * split_a),
+                                   g, blk, params );
+         }
+      }
+      prev_ito = ito;
+   }
+
+   prev_ito = 0;
+   for ( ii = 0; ii < split_a; ii++ ) {
+      int ifrom = prev_ito;
+      int ito = (irange * (ii + 1)) / split_a;
+      int prev_jto = 0;
+      for ( jj = 0; jj < split_b; jj++ ) {
+         int jfrom = prev_jto;
+         int jto = (jrange * (jj + 1)) / split_b;
+         prev_jto = jto;
+         if (ito - ifrom > 0 && jto - jfrom > 0) {
+            tp_abt_join_thread ( ifrom, jfrom );
+         }
+      }
+      prev_ito = ito;
+   }
+}
+
+static inline uint32_t tp_abt_fast_rand ( uint32_t *p_seed ) {
+  // Xorshift
+  uint32_t seed = *p_seed;
+  seed ^= seed << 13;
+  seed ^= seed >> 17;
+  seed ^= seed << 5;
+  *p_seed = seed;
+  return seed;
+}
+
+static int tp_abt_sched_init ( ABT_sched sched, ABT_sched_config config ) {
+   return ABT_SUCCESS;
+}
+
+static void tp_abt_sched_run ( ABT_sched sched ) {
+   int rank;
+   ABT_xstream_self_rank ( &rank );
+
+   uint32_t seed = 0;
+   while ( seed == 0 ) { // seed may not be 0.
+     seed = time ( NULL ) + rank * 777;
+   }
+
+   int num_pools;
+   ABT_sched_get_num_pools ( sched, &num_pools );
+   ABT_pool *pools = (ABT_pool *)alloca ( num_pools * sizeof(ABT_pool) );
+   ABT_sched_get_pools ( sched, num_pools, 0, pools );
+
+   ABT_pool priv_pool = pools[0];
+   ABT_pool my_shared_pool = pools[1];
+   int num_shared_pools = num_pools - 2;
+   ABT_pool* shared_pools = &pools[2];
+
+   int run_cnt = 0, work_count = 0;
+   while ( 1 ) {
+      int local_run_cnt = 0;
+      ABT_unit unit = ABT_UNIT_NULL;
+      // Private pool.
+      ABT_pool_pop ( priv_pool, &unit );
+      if ( unit != ABT_UNIT_NULL ) {
+         ABT_xstream_run_unit ( unit, priv_pool );
+         run_cnt++; local_run_cnt++;
+      }
+      // My shared pool.
+      ABT_pool_pop ( my_shared_pool, &unit );
+      if ( unit != ABT_UNIT_NULL ) {
+         ABT_xstream_run_unit ( unit, my_shared_pool );
+         run_cnt++; local_run_cnt++;
+      }
+      if ( num_shared_pools >= 1 &&
+           (local_run_cnt == 0 || (work_count & 1023) == 0) ) {
+         // Remote pools.
+         uint32_t rand_val = tp_abt_fast_rand ( &seed );
+         int target = rand_val % num_shared_pools;
+         ABT_pool_pop ( shared_pools[target], &unit );
+         if ( unit != ABT_UNIT_NULL ) {
+            ABT_unit_set_associated_pool ( unit, my_shared_pool );
+            ABT_xstream_run_unit ( unit, my_shared_pool );
+         }
+      }
+      if ( work_count++ >= 10000 ) {
+         ABT_xstream_check_events ( sched );
+         ABT_bool stop;
+         ABT_sched_has_to_stop ( sched, &stop );
+         if ( stop == ABT_TRUE ) {
+            break;
+         } else {
+            if ( run_cnt < 50 ) {
+               // sched_yield ();
+            }
+            run_cnt = 0;
+         }
+      }
+   }
+}
+
+static int tp_abt_sched_free ( ABT_sched sched ) {
+   return ABT_SUCCESS;
+}
+
+#endif // _MG_ARGOBOTS
