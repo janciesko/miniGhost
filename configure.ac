@@ -83,6 +83,8 @@ AC_DEFINE([_MG_OPENMP], [1], [Defined to use OpenMP runtime])
 	;;
 	argobots)
 AC_DEFINE([_MG_ARGOBOTS], [1], [Defined to use Argobots runtime])
+	AC_CHECK_HEADER([abt.h],[],AC_MSG_ERROR([unable to find Argobots header file]))
+	AC_CHECK_LIB([abt],[ABT_init],[],AC_MSG_ERROR([unable to find Argobots library]))
 	;;
 
 	*)
