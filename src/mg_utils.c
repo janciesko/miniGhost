@@ -54,8 +54,22 @@ int MG_Init ( int argc, char *argv[], InputParams *params )
 
 #if defined _MG_MPI
 
-   CALL_MPI_Init ( &argc, &argv);
-   MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init" );
+   char *mpi_ts = getenv ( "MPI_TS" );
+   int required = MPI_THREAD_MULTIPLE;
+   int provided;
+   if ( mpi_ts && strcmp ( mpi_ts, "MPI_THREAD_SINGLE" ) == 0 ) {
+      required = MPI_THREAD_SINGLE;
+   } else if ( mpi_ts && strcmp ( mpi_ts, "MPI_THREAD_FUNNELED" ) == 0 ) {
+      required = MPI_THREAD_FUNNELED;
+   } else if ( mpi_ts && strcmp ( mpi_ts, "MPI_THREAD_SERIALIZED" ) == 0 ) {
+      required = MPI_THREAD_SERIALIZED;
+   } else if ( mpi_ts && strcmp ( mpi_ts, "MPI_THREAD_MULTIPLE" ) == 0 ) {
+      required = MPI_THREAD_MULTIPLE;
+   }
+
+   CALL_MPI_Init_thread ( &argc, &argv, required, &provided );
+   MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init_thread" );
+   MG_Assert ( required == provided, "CALL_MPI_Init_thread" );
 
    ierr = CALL_MPI_Comm_dup ( MPI_COMM_WORLD, &MPI_COMM_MG );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Comm_dup" );

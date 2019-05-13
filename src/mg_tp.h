@@ -46,6 +46,7 @@
 #  endif
 
 #  define CALL_MPI_Init           MPIF_Init
+#  define CALL_MPI_Init_thread    MPIF_Init_thread
 #  define CALL_MPI_Finalize       MPI_Finalize
 #  define CALL_MPI_Comm_dup       MPI_Comm_dup
 #  define CALL_MPI_Errhandler_set MPI_Errhandler_set
@@ -75,6 +76,7 @@
 #  endif
 
 #  define CALL_MPI_Init           MPIQ_Init
+#  define CALL_MPI_Init_thread    MPIQ_Init_thread
 #  define CALL_MPI_Finalize       MPIQ_Finalize
 #  define CALL_MPI_Comm_dup       MPIQ_Comm_dup
 #  define CALL_MPI_Errhandler_set MPIQ_Errhandler_set
@@ -96,6 +98,7 @@
 #  define CALL_MPI_Wtime          MPI_Wtime
 #elif defined _MG_MPI
 #  define CALL_MPI_Init           MPI_Init
+#  define CALL_MPI_Init_thread    MPI_Init_thread
 #  define CALL_MPI_Finalize       MPI_Finalize
 #  define CALL_MPI_Comm_dup       MPI_Comm_dup
 #  define CALL_MPI_Errhandler_set MPI_Errhandler_set
