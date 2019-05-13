@@ -47,10 +47,10 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
       offset;                  // Offset for packing and unpacking msg buffers.
 
    MG_REAL
-      *recvbuffer, 
+      *recvbuffer,
       *sendbuffer;
 
-   MPI_Status 
+   MPI_Status
       recv_status;
 
    //int
@@ -126,13 +126,13 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
       MG_Time_accum_l1(time_start,timings.pack_north[thread_id]);
 
 #if defined _MG_DEBUG
-      printf ( "N/S pe %d sending to pe %d count %d msg \n", 
-               mgpp.mype, neighbors[NORTH], count );
+      printf ( "N/S pe %d sending to pe %d count %d msg \n",
+               mgpp.mype, blk.neighbors[NORTH], count );
 #endif
 
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[NORTH], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[NORTH],
                             msgtag[sNrS], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(NORTH)" );
 
@@ -140,11 +140,11 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "N/S pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[NORTH], count );
+               mgpp.mype, blk.neighbors[NORTH], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[NORTH], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[NORTH],
                             msgtag[sSrN], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(NORTH)" );
 
@@ -186,11 +186,11 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "S/N pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[SOUTH], count );
+               mgpp.mype, blk.neighbors[SOUTH], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[SOUTH], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[SOUTH],
                             msgtag[sNrS], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(SOUTH)" );
 
@@ -198,11 +198,11 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "S/N pe %d sending to pe %d count %d msg \n",
-               mgpp.mype, neighbors[SOUTH], count );
+               mgpp.mype, blk.neighbors[SOUTH], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[SOUTH], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[SOUTH],
                             msgtag[sSrN], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(SOUTH)" );
 
@@ -224,9 +224,10 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 #if defined _MG_DEBUG
    printf ( " ==================== [pe %d] Completed NS =================== \n ", mgpp.mype );
 
-   printf ( "[pe %d] EAST/WEST:xend %d %d neigh %d \n", mgpp.mype, blk.xend, params.nx + gd - 1, neighbors[EAST] );
+   printf ( "[pe %d] EAST/WEST:xend %d %d neigh %d \n", mgpp.mype, blk.xend, params.nx + gd - 1, blk.neighbors[EAST] );
 #endif
-
+      printf ( "E/W PRE pe %d recving from %d count %d msg TRY? %d \n",
+               mgpp.mype, blk.neighbors[EAST], count, blk.neighbors[EAST] != -1  );
    if ( blk.neighbors[EAST] != -1 ) {
 
       // 1. Pack east face
@@ -248,24 +249,24 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
       MG_Time_accum_l1(time_start,timings.pack_east[thread_id]);
 
 #if defined _MG_DEBUG
-      printf ( "E/W pe %d sending to pe %d count %d msg \n",
-               mgpp.mype, neighbors[EAST], count );
+      printf ( "E/W pe %d sending to pe %d count %d msg tag %d\n",
+               mgpp.mype, blk.neighbors[EAST], count, msgtag[sErW] );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[EAST], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[EAST],
                             msgtag[sErW], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(EAST)" );
 
       MG_Time_accum_l1(time_start,timings.send_east[thread_id]);
 
 #if defined _MG_DEBUG
-      printf ( "E/W pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[EAST], count );
+      printf ( "E/W BAD 1 pe %d recving from %d count %d msg tag %d\n",
+               mgpp.mype, blk.neighbors[EAST], count, msgtag[sWrE]);
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[EAST], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[EAST],
                             msgtag[sWrE], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(EAST)" );
 
@@ -283,7 +284,10 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
       MG_Time_accum_l1(time_start,timings.unpack_east[thread_id]);
    } // end EAST neighbor.
-
+#if defined _MG_DEBUG
+      printf ( "W/E PRE pe %d recving from %d count %d msg TRY? %d\n",
+               mgpp.mype, blk.neighbors[WEST], count, blk.neighbors[WEST] != -1 );
+#endif
    if ( blk.neighbors[WEST] != -1 ) {
 
       // 1. Pack west face
@@ -303,14 +307,13 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
       count = offset;
 
       MG_Time_accum_l1(time_start,timings.pack_west[thread_id]);
-
 #if defined _MG_DEBUG
-      printf ( "W/E pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[WEST], count );
+      printf ( "W/E BAD 2 pe %d recving from %d count %d msg tag %d\n",
+               mgpp.mype, blk.neighbors[WEST], count, msgtag[sErW]);
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[WEST], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[WEST],
                             msgtag[sErW], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(WEST)" );
 
@@ -318,11 +321,11 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "W/E pe %d sending to pe %d count %d msg \n",
-               mgpp.mype, neighbors[WEST], count );
+               mgpp.mype, blk.neighbors[WEST], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[WEST], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[WEST],
                             msgtag[sWrE], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(WEST)" );
 
@@ -356,7 +359,7 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
       offset = 0; // Pack send buffer.
       for ( j=blk.ystart; j<=blk.yend; j++ )
-         for ( i=blk.xstart; i<=blk.xend; i++ ) 
+         for ( i=blk.xstart; i<=blk.xend; i++ )
             sendbuffer[offset++] = grid_in(i, j, back_face_idx);
 
       count = offset;
@@ -365,23 +368,23 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "B/F pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[BACK], count );
+               mgpp.mype, blk.neighbors[BACK], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[BACK], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[BACK],
                             msgtag[sFrB], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(BACK)" );
 
       MG_Time_accum_l1(time_start,timings.recv_back[thread_id]);
 
 #if defined _MG_DEBUG
-      printf ( "B/F pe %d sending to pe %d count %d msg \n",
-               mgpp.mype, neighbors[BACK], count );
+      printf ( "B/F pe %d sending to pe %d count %d msg tag %d\n",
+               mgpp.mype, blk.neighbors[BACK], count, msgtag[sBrF]);
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[BACK], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[BACK],
                             msgtag[sBrF], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(BACK)" );
 
@@ -420,12 +423,12 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
       MG_Time_accum_l1(time_start,timings.pack_front[thread_id]);
 
 #if defined _MG_DEBUG
-      printf ( "F/B pe %d sending to pe %d count %d msg \n",
-               mgpp.mype, neighbors[FRONT], count );
+      printf ( "F/B pe %d sending to pe %d count %d msg tag %d\n",
+               mgpp.mype, blk.neighbors[FRONT], count, msgtag[sFrB]);
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, neighbors[FRONT], 
+      ierr = CALL_MPI_Send ( sendbuffer, count, MG_COMM_REAL, blk.neighbors[FRONT],
                              msgtag[sFrB], MPI_COMM_MG );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Send(FRONT)" );
 
@@ -433,11 +436,11 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
 
 #if defined _MG_DEBUG
       printf ( "F/B pe %d recving from %d count %d msg \n",
-               mgpp.mype, neighbors[FRONT], count );
+               mgpp.mype, blk.neighbors[FRONT], count );
 #endif
       MG_Time_start_l1(time_start);
 
-      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, neighbors[FRONT], 
+      ierr = CALL_MPI_Recv ( recvbuffer, count, MG_COMM_REAL, blk.neighbors[FRONT],
                             msgtag[sBrF], MPI_COMM_MG, &recv_status );
       MG_Assert ( MPI_SUCCESS == ierr, "MG_Boundary_exchange_SR:CALL_MPI_Recv(FRONT)" );
 
