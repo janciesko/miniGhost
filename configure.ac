@@ -64,6 +64,15 @@ AC_ARG_ENABLE([craypat-api],
 			AC_CHECK_LIB([_pat_base],[PAT_region_begin],[],AC_MSG_ERROR([unable to find Cray PAT library]))
 ])
 
+AC_ARG_ENABLE([gemini-counters],
+		[AS_HELP_STRING([--enable-gemini-counters],
+			[Enable gemini performance counters])])
+
+	AS_IF([test "x$enable_gemini_counters" = "xyes"],
+			[AC_DEFINE([_USE_GEMINI_COUNTERS], [1], [Defined if gemini counter support is enabled])
+			AC_CHECK_HEADER([gemini.h],[],AC_MSG_ERROR([unable to find gemini counter header file]))
+			AC_CHECK_LIB([gemini],[gemini_init_state],[],AC_MSG_ERROR([unable to find gemini counter library]))
+])
 AC_ARG_WITH([runtime],
 		[AS_HELP_STRING([--with-runtime],
 			[choose which runtime to use (serial, openmp, qthreads, argobots)])])
