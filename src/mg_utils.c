@@ -71,6 +71,10 @@ int MG_Init ( int argc, char *argv[], InputParams *params )
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init_thread" );
    MG_Assert ( required == provided, "CALL_MPI_Init_thread" );
 
+#if !defined _USE_PAT_API
+   CALL_MPI_Init ( &argc, &argv);
+   MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init" );
+#endif
    ierr = CALL_MPI_Comm_dup ( MPI_COMM_WORLD, &MPI_COMM_MG );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Comm_dup" );
 
