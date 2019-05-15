@@ -225,9 +225,9 @@ int MG_Boundary_exchange_SR ( InputParams params, MG_REAL *grid_in, BlockInfo bl
    printf ( " ==================== [pe %d] Completed NS =================== \n ", mgpp.mype );
 
    printf ( "[pe %d] EAST/WEST:xend %d %d neigh %d \n", mgpp.mype, blk.xend, params.nx + gd - 1, blk.neighbors[EAST] );
+   printf ( "E/W PRE pe %d recving from %d count %d msg TRY? %d \n",
+             mgpp.mype, blk.neighbors[EAST], count, blk.neighbors[EAST] != -1  );
 #endif
-      printf ( "E/W PRE pe %d recving from %d count %d msg TRY? %d \n",
-               mgpp.mype, blk.neighbors[EAST], count, blk.neighbors[EAST] != -1  );
    if ( blk.neighbors[EAST] != -1 ) {
 
       // 1. Pack east face
