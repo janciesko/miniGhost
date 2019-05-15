@@ -67,14 +67,12 @@ int MG_Init ( int argc, char *argv[], InputParams *params )
       required = MPI_THREAD_MULTIPLE;
    }
 
+#if !defined _USE_PAT_API
    CALL_MPI_Init_thread ( &argc, &argv, required, &provided );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init_thread" );
    MG_Assert ( required == provided, "CALL_MPI_Init_thread" );
-
-#if !defined _USE_PAT_API
-   CALL_MPI_Init ( &argc, &argv);
-   MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Init" );
 #endif
+
    ierr = CALL_MPI_Comm_dup ( MPI_COMM_WORLD, &MPI_COMM_MG );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Comm_dup" );
 
@@ -1134,7 +1132,7 @@ int MG_Barrier ( )
 
 //  ===================================================================================
 
-void *MG_CALLOC ( int count, size_t size_of_count )
+void *MG_CALLOC ( size_t count, size_t size_of_count )
 {
    // ---------------
    // Local Variables
@@ -1147,7 +1145,7 @@ void *MG_CALLOC ( int count, size_t size_of_count )
    // ---------------------
 
    //printf ( "****                    calloc len %d of size %d \n", count, (int)size_of_count );
-   ptr = calloc( (size_t)count, size_of_count );
+   ptr = calloc( count, size_of_count );
    //printf ( "****                    ptr = %p \n", ptr );
    if ( ptr == NULL )
       return ( ptr );
@@ -1196,7 +1194,7 @@ void *MG_DECALLOC ( void *ptr, int decount, size_t size_of_decount )
 
 //  ===================================================================================
 
-double *MG_DCALLOC_INIT ( int count )
+double *MG_DCALLOC_INIT ( size_t count )
 {
    // To ensure timing arrays initialized to 0.
 

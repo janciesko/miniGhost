@@ -323,11 +323,11 @@ MG_EXTERN BlockInfo **blk;
 
 typedef struct {
 
-   int
+   size_t
       nx,                          // Local (to (MPI) process) x-dim
       ny,                          // Local (to (MPI) process) y-dim
-      nz,                          // Local (to (MPI) process) z-dim
-
+      nz;                          // Local (to (MPI) process) z-dim
+   int
       comm_method,                 // Boundary exchange aggregation method.
       comm_strategy,               // MPI send/recv strategy.
       scaling,                     // Strong or weak.
@@ -693,9 +693,9 @@ void MG_Assert ( int ierr, const char *error_msg );
 
 int MG_Terminate ( );
 
-void *MG_CALLOC ( int count, size_t size_of_count );
+void *MG_CALLOC ( size_t count, size_t size_of_count );
 
-double *MG_DCALLOC_INIT ( int count );
+double *MG_DCALLOC_INIT ( size_t count );
 
 int MG_Check_input ( InputParams params );
 
@@ -703,7 +703,7 @@ int MG_Init ( int argc, char *argv[], InputParams *params );
 
 int MG_IPOW ( int a, int b );
 
-void *MG_MALLOC ( int count, size_t size );
+void *MG_MALLOC ( size_t count, size_t size );
 
 void *MG_DECALLOC ( void *ptr, int decount, size_t size_of_decount );
 

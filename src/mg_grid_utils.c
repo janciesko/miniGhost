@@ -33,8 +33,9 @@ int MG_Grid_init ( InputParams *params, StateVar **g )
    // Local Declarations
    // ------------------
 
-   int
-      count,
+  size_t
+      count;
+  int
       i,                     // Counter
       j,                     // Counter
       ierr = 0,              // Return status
@@ -213,7 +214,7 @@ int MG_Grid_init ( InputParams *params, StateVar **g )
    for ( ivar=0; ivar<params->numvars; ivar++ ) { // Initialize grid values.
       g[ivar]->values1 = (MG_REAL*)MG_CALLOC ( count, sizeof(MG_REAL) );
       if ( g[ivar]->values1 == NULL ) {
-         fprintf ( stderr, "Allocation of g[%d]->values1 of count %d failed \n", ivar, count );
+         fprintf ( stderr, "Allocation of g[%d]->values1 of count %lu failed\n", ivar, count );
       }
       MG_Assert ( g[ivar]->values1 != NULL, "MG_Grid_init: MG_CALLOC ( g[ivar]->values1 )" );
 
@@ -222,7 +223,7 @@ int MG_Grid_init ( InputParams *params, StateVar **g )
 
       g[ivar]->values2 = (MG_REAL*)MG_CALLOC ( count, sizeof(MG_REAL) );
       if ( g[ivar]->values2 == NULL ) {
-         fprintf ( stderr, "Allocation of g[%d]->values2 of count %d failed \n", ivar, count );
+         fprintf ( stderr, "Allocation of g[%d]->values2 of count %lu failed \n", ivar, count );
       }
       MG_Assert ( g[ivar]->values2 != NULL, "MG_Grid_init: MG_CALLOC ( g[ivar]->values2 )" );
    }
