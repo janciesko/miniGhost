@@ -76,9 +76,6 @@ int MG_Init ( int argc, char *argv[], InputParams *params )
    ierr = CALL_MPI_Comm_dup ( MPI_COMM_WORLD, &MPI_COMM_MG );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Comm_dup" );
 
-   ierr = CALL_MPI_Errhandler_set ( MPI_COMM_MG, MPI_ERRORS_ARE_FATAL );
-   MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Errhandler_set" );
-
    ierr = CALL_MPI_Comm_rank ( MPI_COMM_MG, &mgpp.mype );
    MG_Assert ( MPI_SUCCESS == ierr, "CALL_MPI_Comm_rank" );
 
